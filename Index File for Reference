@@ -1,0 +1,277 @@
+var express = require("express");
+var bodyParser = require("body-parser");
+var mongoose = require("mongoose");
+const { MongoClient } = require('mongodb');
+
+const app = express();
+
+app.use(bodyParser.json());
+app.use(express.static('public'));
+app.use(bodyParser.urlencoded({
+    extended:true
+}));
+
+mongoose.connect('mongodb://localhost:27017/easycargo', {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+});
+
+var db = mongoose.connection;
+
+db.on('error', () => console.log("Error in Connecting to Database"));
+db.once('open', () => console.log("Connected to Database"));
+
+app.post("/signup", (req, res) => {
+    var fullname = req.body.fullname;
+    var email = req.body.email;
+    var password = req.body.password;
+
+    var data = {
+        "name": fullname,
+        "email" : email,
+        "password" : password
+    };
+
+    db.collection('user').insertOne(data, (err, collection) => {
+        if (err) {
+            throw err;
+        }
+        console.log("Record Inserted Successfully");
+    });
+
+    return res.redirect('login.html');
+});
+
+app.get("/", (req, res) => {
+    res.set({
+        "Allow-access-Allow-Origin": '*'
+    });
+    return res.redirect('index.html');
+}).listen(3000);
+
+if (typeof document !== 'undefined') {
+    var name = document.getElementById("name");
+}
+
+app.post("/login", async (req, res) => {
+    name = req.body.name;
+    var password = req.body.password;
+    var result;
+    try {
+        result = await db.collection('user').findOne({ name: name });
+    } catch (err) {
+        console.log('User does not exist');
+    }
+
+    console.log(result);
+
+    if (result) {
+        if (name === 'admin') {
+            if (password === 'password') {
+                return res.redirect('/admin');
+            } else {
+                console.log('INVALID USERNAME OR PASSWORD');
+                return res.redirect('login.html');
+            }
+        } else {
+            if (result.password === password) {
+                return res.redirect('intro2.html');
+            } else {
+                console.log('INVALID USERNAME OR PASSWORD');
+                return res.redirect('login.html');
+            }
+        }
+    } else {
+        console.log('INVALID USERNAME OR PASSWORD');
+        return res.redirect('login.html');
+    }
+});
+
+app.get("/login", (req, res) => {
+    document.getElementById('name').textContent = result.name;
+    return res.send('Welcome');
+});
+
+app.post("/changepassword", async (req, res) => {
+    console.log(name);
+    var npassword = req.body.password;
+    var result;
+    try {
+        result = await db.collection('user').findOne({ name: name });
+    } catch (err) {
+        console.log('User does not exist');
+    }
+    console.log(result);
+
+    if (result) {
+        db.collection('user').updateOne({ name: name }, { $set: { password: npassword } });
+        return res.redirect('login.html');
+    } else {
+        console.log('INVALID USERNAME OR PASSWORD');
+    }
+});
+
+app.post("/host", (req, res) => {
+    var flightno = req.body.flightno;
+    var weight = req.body.weight;
+    var passno = req.body.passno;
+    var departair = req.body.departair;
+    var arrivalair = req.body.arrivalair;
+    var date = req.body.date;
+    var dtime = req.body.dtime;
+
+    var data = {
+        "name": name,
+        "flightno": flightno,
+        "weight": weight,
+        "passno": passno,
+        "departair": departair,
+        "arrivalair": arrivalair,
+        "date": date,
+        "dtime": dtime
+    };
+
+    db.collection('host').insertOne(data, (err, collection) => {
+        if (err) {
+            throw err;
+        }
+        console.log("Record Inserted Successfully");
+    });
+
+    return res.redirect('intro2.html');
+});
+
+app.set("view engine", "ejs");
+
+app.post("/send", async (req, res) => {
+    var weight = req.body.weight;
+    var departair = req.body.departair;
+    var arrivalair = req.body.arrivalair;
+    var date = req.body.date;
+
+    try {
+        const result = await db.collection('host').find({ weight: { $gte: weight }, departair: departair, arrivalair: arrivalair, date: { $lte: date } }).toArray();
+        res.render("search", { result });
+    } catch (err) {
+        console.log('User does not exist');
+    }
+});
+
+var pnum = "";
+var fnum = "";
+app.post("/select", (req, res) => {
+    pnum = req.body.pnum;
+    fnum = req.body.fnum;
+    console.log(pnum);
+    console.log(fnum);
+    return res.redirect("pay.html");
+});
+
+app.post("/pay", async (req, res) => {
+    console.log(pnum);
+    var result;
+    try {
+        result = await db.collection('host').findOne({ passno: pnum, flightno: fnum });
+    } catch (err) {
+        console.log('User does not exist');
+    }
+    console.log(result);
+
+    if (result) {
+        db.collection('host').updateOne({ passno: pnum }, { $set: { weight: "0" } });
+
+        var hostname = result.name;
+        var flightno = result.flightno;
+        var date = result.date;
+        var dtime = result.dtime;
+        var data = {
+            "name": name,
+            "hostname": hostname,
+            "flightno": flightno,
+            "date": date,
+            "dtime": dtime
+        };
+        db.collection('send').insertOne(data, (err, collection) => {
+            if (err) {
+                throw err;
+            }
+            console.log("Record Inserted Successfully");
+        });
+        return res.redirect('intro2.html');
+    } else {
+        console.log('INVALID');
+    }
+});
+
+app.get("/views/hostings.ejs", async (req, res) => {
+    try {
+        const result = await db.collection('host').find({ name: name }).toArray();
+        res.render("hostings", { result });
+    } catch (err) {
+        console.log('User does not exist');
+    }
+});
+
+app.get("/views/send.ejs", async (req, res) => {
+    try {
+        const result1 = await db.collection('send').find({ name: name }).toArray();
+        res.render("send", { result1 });
+    } catch (err) {
+        console.log('User does not exist');
+    }
+});
+
+// Admin dashboard
+app.get("/admin", async (req, res) => {
+    try {
+        const senders = await db.collection('user').find({}).toArray();
+        const hosts = await db.collection('host').find({}).toArray();
+        const bookings = await db.collection('bookings').find({}).toArray();
+        const hostings = await db.collection('hostings').find({}).toArray();
+        res.render("admin_dashboard", { senders, hosts, bookings, hostings });
+    } catch (err) {
+        console.log('Error fetching data:', err);
+        res.status(500).send('Internal Server Error');
+    }
+});
+
+
+
+
+//ejs file for admin :
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard</title>
+</head>
+<body>
+    <h1>Admin Dashboard</h1>
+    <h2>Senders</h2>
+    <ul>
+        <% senders.forEach(function(sender) { %>
+            <li>Name: <%= sender.name %>, Email: <%= sender.email %></li>
+        <% }); %>
+    </ul>
+    <h2>Hosts</h2>
+    <ul>
+        <% hosts.forEach(function(host) { %>
+            <li>Name: <%= host.name %>, Flight No: <%= host.flightno %></li>
+        <% }); %>
+    </ul>
+    <h2>Bookings</h2>
+    <ul>
+        <% bookings.forEach(function(booking) { %>
+            <li>Passenger No: <%= booking.passno %>, Flight No: <%= booking.flightno %></li>
+        <% }); %>
+    </ul>
+    <h2>Hostings</h2>
+    <ul>
+        <% hostings.forEach(function(hosting) { %>
+            <li>Name: <%= hosting.name %>, Flight No: <%= hosting.flightno %></li>
+        <% }); %>
+    </ul>
+</body>
+</html>
+
+
+
